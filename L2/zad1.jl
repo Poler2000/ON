@@ -1,3 +1,5 @@
+# Paweł Polerowicz 254626
+
 x =  [2.718281828, -3.141592654, 1.414213562, 0.577215664, 0.301029995]
 y =  [1486.2497, 878366.9879, -22.37492, 4773714.647, 0.000185049]
 S32 = Float32(0.0)
@@ -25,7 +27,7 @@ println(S32)
 println(S64)
 
 
-# the biggest to the smallest
+# the biggest to the smallestDokładność
 S32 = Float32(0.0)
 S64 = Float64(0.0)
 partialSums32 = Array{Float32}(undef, 5)
@@ -70,8 +72,6 @@ S32 = S32N + S32P
 S64 = S64N + S64P
 
 println("big to small")
-println(partialSums32)
-println(partialSums64)
 println(S32)
 println(S64)
 
@@ -119,10 +119,7 @@ end
 
 S32 = S32N + S32P
 S64 = S64N + S64P
-println(S32N)
-println(S32P)
-println(S64N)
-println(S64P)
+
 println("small to big")
 println(S32)
 println(S64)
