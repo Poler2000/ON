@@ -3,7 +3,7 @@
 using SparseArrays
 using LinearAlgebra
 
-function swapRows(A::SparseMatrixCSC{Float64, Int64}, h::Int64, i_max::Int64, n::Int64)
+function swapRows(A::Matrix{Float64}, h::Int64, i_max::Int64, n::Int64)
     for i in 1:(n+1)
         tmp = A[h, i]
         A[h, i] = A[i_max, i]
@@ -11,16 +11,11 @@ function swapRows(A::SparseMatrixCSC{Float64, Int64}, h::Int64, i_max::Int64, n:
     end
 end
 
-function swapRowsLazy(A::SparseMatrixCSC{Float64, Int64}, h::Int64, i_max::Int64, n::Int64, l::Int64)
-    for i in 1:(n+1)
-        tmp = A[h, i]
-        A[h, i] = A[i_max, i]
-        A[i_max, i] = tmp
-    end
-end
-
-function gaussElimination(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64)
+function gaussElimination(A::Matrix{Float64}, b::Vector{Float64}, n::Int64)
     k = 1
+    A_star = zeros(Float64, n, n + 1)
+    A_star[1:n, 1:n] = A[1:n, 1:n]
+    A_star[1:n, n + 1] = b[1:n]
 
     # n times
     while k <= n
@@ -28,26 +23,26 @@ function gaussElimination(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}
         v_max = abs(A[i_max, k])
         # O(n)
         for i in (k+1):n
-            if (abs(A[i, k]) > v_max)
+            if (abs(A_star[i, k]) > v_max)
                 i_max = i
-                v_max = abs(A[i,k])
+                v_max = abs(A_star[i,k])
             end
         end
-        if (A[i_max, k] == 0)
+        if (A_star[i_max, k] == 0)
             k = k + 1
             continue
         else
             if (i_max != k)
-                swapRows(A, k, i_max, n)
+                swapRows(A_star, k, i_max, n)
             end
 
             for i in (k+1):n
-                f = A[i, k] / A[k, k]
+                f = A_star[i, k] / A_star[k, k]
                 # Fill with zeros the lower part of pivot column: */
-                A[i, k] = 0
+                A_star[i, k] = 0
                 # Do for all remaining elements in current row: */
                 for j in (k+1):(n+1)
-                    A[i, j] = A[i, j] - A[k, j] * f
+                    A_star[i, j] = A_star[i, j] - A_star[k, j] * f
                 end
             end
         end
@@ -55,214 +50,104 @@ function gaussElimination(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}
     end
     x = zeros(Float64, n)
     for i in n:-1:1
-        x[i] = A[i,n+1]
+        x[i] = A_star[i,n+1]
         for j in (i+1):n
-            x[i] = x[i] - A[i,j]*x[j]
+            x[i] = x[i] - A_star[i,j]*x[j]
         end
-        x[i] = x[i]/A[i,i]
+        x[i] = x[i]/A_star[i,i]
     end
     return x
 end
 
-function gaussEliminationOptimized(A::SparseMatrixCSC{Float64, Int64},
+function gaussThomasMap(A::Dict{Int64, Float64},
     b::Vector{Float64}, n::Int64, l::Int64)
-    k = 1
-    v = n / l
-
-    while k <= n
-        i_max = k
-        v_max = abs(A[i_max, k])
-        upper = min(n, k + l)
-        for i in (k+1):upper
-            if (abs(A[i, k]) > v_max)
-                i_max = i
-                v_max = abs(A[i,k])
-            end
-        end
-        if (A[i_max, k] == 0)
-            k = k + 1
-            continue
-        else
-            if (i_max != k)
-                swapRowsLazy(A, k, i_max, n, l)
-            end
-
-            for i in (k+1):n
-                f = A[i, k] / A[k, k]
-                # Fill with zeros the lower part of pivot column: */
-                A[i, k] = 0
-                # Do for all remaining elements in current row: */
-                upper = min(n, i + l + 2)
-                for j in (k+1):upper
-                    A[i, j] = A[i, j] - A[k, j] * f
-                end
-                A[i, n+1] = A[i, n+1] - A[k, n+1] * f
-            end
-        end
-        k = k + 1
-    end
-    x = zeros(Float64, n)
-    for i in n:-1:1
-        x[i] = A[i,n+1]
-        for j in (i+1):n
-            x[i] = x[i] - A[i,j]*x[j]
-        end
-        x[i] = x[i]/A[i,i]
-    end
-    return x
-end
-
-
-function luDecomposition(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    lower = spzeros(Float64, n, n)
-    upper = spzeros(Float64, n, n)
-    P = zeros(Int64, n + 1)
-
-    for i in 1:(n+1)
-        P[i] = i
-    end
-    for i in 1:n
-        maxA = 0.0
-        i_max = i
-
-        for k in i:n
-            absA = abs(A[k, i])
-            if (absA > maxA)
-                maxA = absA
-                i_max = i
-            end
-        end
-        if (maxA < eps(Float64))
-            println("matrix is degenerate")
-            return -1
-        end
-        if (i_max != i)
-            j = P[i]
-            P[i] = P[i_max]
-            P[i_max] = j
-
-            for j in 1:n
-                tmp = A[i, j]
-                A[i, j] = A[i_max, j]
-                A[i_max, j] = tmp
-            end
-
-            P[n+1] += 1
-        end
-
-
-        for j in (i+1):n
-            A[j, i] = A[j, i] / A[i, i]
-
-            for k in (i+1):n
-                A[j, k] = A[j, k] - A[j, i] * A[i, k]
+    v = floor(Int64, n / l)
+    b = reshape(b,l,v)
+    x = zeros(Float64, l, v)
+    c = zeros(Float64, l, v)
+    D = zeros(Float64, l, l, v)
+    Q = zeros(Float64, l, l, v)
+    G = zeros(Float64, l, l, v)
+    C = zeros(Float64, l, l, v - 1)
+    B = zeros(Float64, l, l, v - 1)
+    for k in 1:(v - 1)
+        for i in 1:l
+            for j in 1:l
+                D[i, j, k] = get(A, ((k-1)*l)+i + (((k-1)*l)+j) * n, 0.0)
+                B[i, j, k] = get(A, ((k-1)*l)+i + l + n * (((k-1)*l) + j), 0.0)
+                C[i, j, k] = get(A, ((k-1)*l)+i + n * (((k-1)*l)+j + l), 0.0)
             end
         end
     end
 
-    println("lower")
-    for i in 1:n
-        for j in 1:n
-            print(A[i, j])
+    for i in 1:l
+        for j in 1:l
+            D[i, j, v] = get(A, (v-1)*l + i + ((v-1)*l + j) * n, 0.0)
+        end
+    end
+
+    Q[:, :, 1] = D[:, :, 1]
+    G[:, :, 1] = Q[:, :, 1] \ C[:, :, 1]
+
+    for i in 1:l
+        for j in 1:l
+            print(Q[i, j, 1])
             print(" ")
         end
         println(" ")
     end
-    #=
-    x = zeros(n)
-    for i in 1:n
-        x[i] = b[P[i]]
-
-        for k in 1:(i-1)
-            x[i] = x[i] - A[i, k] * x[k]
+    for i in 1:l
+        for j in 1:l
+            print(G[i, j, 1])
+            print(" ")
         end
+        println(" ")
     end
 
-    for i in n:-1:1
-        for k in (i+1):n
-            x[i] = A[i, k] * x[k]
-        end
-
-        x[i] = x[i] / A[i, i]
+    for k in 2:(v-1)
+        Q[:,:,k]=D[:,:,k]-B[:,:,k-1]*G[:,:,k-1]
+        G[:, :, k] = Q[:, :, k] \ C[:, :, k]
     end
 
-    println("Results:")
-    println(x)
-    =#
+    Q[:, :, v] = D[:, :, v] - B[:, :, v - 1] * G[:, :, v-1]
 
-    y = zeros(Float64, n)
-    for i in 1:n
-        sum = 0;
-        for k in 1:(i-1)
-            sum = sum + A[i, k] * y[k]
+    #=for k in 1:v
+        for i in 1:l
+            for j in 1:l
+                print(G[i, j, k])
+                print(" ")
+            end
+            println(" ")
         end
-        y[i] = b[i] - sum
+        println(" ")
+    end=#
+
+    c[:, 1] = gaussElimination(Q[:, :, 1], b[:, 1], l)
+
+
+    for k in 2:v
+        c[:, k] = Q[:, :, k] \ (b[:,k]- B[:,:,k-1] * c[:,k-1])
     end
 
-    x = zeros(Float64, n)
-    for i in n:-1:1
-        sum = 0;
-        for k in (i+1):n
-            sum = sum + A[i, k] * x[k]
-        end
-        x[i] = (1 / A[i, i]) * (y[i] - sum)
-    end
 
+    x[:, v] = c[:, v]
+
+    for k in (v-1):-1:1
+        x[:,k]=c[:,k]-G[:,:,k]*x[:,k+1];
+    end
     println(x)
 end
 
 
-#=
-function luDecomposition(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    lower = spzeros(Float64, n, n)
-    upper = spzeros(Float64, n, n)
-
-    for i in 1:n
-        for k in i:n
-            sum = 0
-            for j in 1:(i-1)
-                sum = sum + (lower[i, j] * upper[j, k])
-            end
-            upper[i, k] = A[i, k] - sum
-        end
-
-        for k in i:n
-            if (i == k)
-                lower[i, i] = 1
-            else
-                sum = 0
-                for j in 1:(i-1)
-                    sum = sum + (lower[k, j] * upper[j, i])
-                end
-                lower[k, i] = (A[k, i] - sum) / upper[i, i]
-            end
-        end
-    end
-    println("lower")
-    for i in 1:n
-        for j in 1:n
-            print(lower[i, j])
-            print(" ")
-        end
-        println(" ")
-    end
-    println("upper")
-    for i in 1:n
-        for j in 1:n
-            print(upper[i, j])
-            print(" ")
-        end
-        println(" ")
-    end
-end
-=#
 f = open("Dane16_1_1/A.txt", "r")
+#f = open("A1000.txt", "r")
 
 args = readline(f)
 nl = parse.(Int64, split(args))
 n = nl[1]
 l = nl[2]
 A = spzeros(Float64, n, n + 1)
+A_Map = Dict{Int64, Float64}()
 args = readlines(f)
 
 for arg in args
@@ -272,13 +157,15 @@ for arg in args
     v = entry[3]
     #println(v)
     A[x,y] = v
+    A_Map[x + y * n] = v
     #println(A[x,y])
 end
 
 g = open("Dane16_1_1/b.txt", "r")
+#g = open("Dane16_1_1/b.txt", "r")
 m = readline(g)
 
-b = zeros(Float64, n)
+b = ones(Float64, n)
 
 for i in 1:n
     line = readline(g)
@@ -286,8 +173,8 @@ for i in 1:n
     b[i] = v
     A[i,n+1] = b[i]
 end
-
 #println(A)
+
 #=
 for i in 1:n
     for j in 1:n
@@ -295,10 +182,9 @@ for i in 1:n
         print(" ")
     end
     println(" ")
-end
-=#
+end=#
+
 #println(b)
-luDecomposition(A, b, n, l)
 C = spzeros(Float64, n, n)
 for i in 1:n
     for j in 1:n
@@ -307,17 +193,6 @@ for i in 1:n
         end
     end
 end
-println("gauss:")
-result = gaussEliminationOptimized(A, b, n, l)
-for i in 1:n
-    for j in 1:n
-        print(A[i, j])
-        print(" ")
-    end
-    println(" ")
-end
-
-#println(C)
-println(result)
-x = C\b
-println(x)
+#luTest(A, b, n, l)
+#luDecompositionOptimized(A, b, n, l)
+@time gaussThomasMap(A_Map, b, n, l)
