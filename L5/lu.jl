@@ -4,12 +4,6 @@ using SparseArrays
 using LinearAlgebra
 
 function luPartialPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64)
-    P = zeros(Int64, n + 1)
-
-    for i in 1:(n+1)
-        P[i] = i
-    end
-
     for i in 1:n
         maxA = 0.0
         i_max = i
@@ -26,15 +20,14 @@ function luPartialPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64
             println("matrix is degenerate")
             return -1
         end
-        upper = min(n, i + 2 * l + 1)
+        upper = min(n, i + 2 * l)
+        lower = i - l
         if (i_max != i)
-            j = P[i]
-            P[i] = P[i_max]
-            P[i_max] = j
+            tmp = b[i]
+            b[i] = b[i_max]
+            b[i_max] = tmp
 
-            # O(n) * n
-
-            for j in 1:upper
+            for j in lower:upper
                 tmp = get(A, i + (j - 1) * n, 0.0)
                 if (tmp != 0 || get(A, (i_max + (j - 1) * n), 0.0) != 0)
                     A[i + (j - 1) * n] = get(A, (i_max + (j - 1) * n), 0.0)
@@ -42,7 +35,6 @@ function luPartialPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64
                 end
             end
 
-            P[n+1] += 1
         end
 
         for j in i+1:upper
@@ -51,38 +43,7 @@ function luPartialPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64
                 A[j + (k - 1) * n] = get(A, (j + (k - 1) * n), 0.0) - get(A, (j + (i - 1) * n), 0.0) * get(A, (i + (k - 1) * n), 0.0)
             end
         end
-
-        #=ii = P[i]
-        for j in i+1:n
-            jj = P[j]
-            A[jj + (i - 1) * n] /= get(A, (ii + (i - 1) * n), 0.0)
-            for k in i+1:n
-                jj = P[j]
-                A[jj + (k - 1) * n] -= get(A, (jj + (i - 1) * n), 0.0) * get(A, (ii + (k - 1) * n), 0.0)
-            end
-        end=#
     end
-    println("Solving!")
-    x = zeros(Float64, n)
-    for i in 1:n
-        x[i] = b[P[i]]
-
-        for k in 1:i-1
-            x[i] -= get(A, i + (k - 1) * n, 0.0) * x[k]
-        end
-    end
-    for i in n:-1:1
-        for k in i+1:n
-            x[i] -= get(A, i + (k - 1) * n, 0.0) * x[k]
-        end
-
-        x[i] /= get(A, i + (i - 1) * n, 0.0)
-    end
-    println(x)
-    #=for j in 1:n
-        A[j + (j - 1) * n] = 1
-    end=#
-
 end
 
 function luNoPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64)
@@ -96,7 +57,9 @@ function luNoPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::
             end
         end
     end
+end
 
+function luSolve(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64)
     y = zeros(Float64, n)
     for i in 1:n
         sum = 0;
@@ -111,308 +74,139 @@ function luNoPivoting(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::
     for i in n:-1:1
         sum = 0;
 
-        upper = min(n, i + l + 1)
+        upper = min(n, i + 2*l + 1)
         for k in (i+1):upper
             sum = sum + get(A, i + (k - 1) * n, 0.0) * x[k]
         end
         x[i] = (1 / get(A, i + (i - 1) * n, 0.0)) * (y[i] - sum)
     end
-
-    println(x)
+    return x
 end
 
-function helper1(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64, i, P)
-    maxA = 0.0
-    i_max = i
-    upper = min(n, i + l + 1)
+function loadA(inputFileA)
+    f = open(inputFileA, "r")
+    args = readline(f)
+    nl = parse.(Int64, split(args))
+    n = nl[1]
+    l = nl[2]
+    args = readlines(f)
+    A_Map = Dict{Int64, Float64}()
 
-    for k in i:upper
-        absA = abs(A[k, i])
-        if (absA > maxA)
-            maxA = absA
-            i_max = i
-        end
+    for arg in args
+        entry = parse.(Float64, split(arg))
+        x = floor(Int32, entry[1])
+        y = floor(Int32, entry[2])
+        v = entry[3]
+        A_Map[x + (y-1) * n] = v
     end
-    if (maxA < eps(Float64))
-        println("matrix is degenerate")
-        return -1
-    end
 
-    if (i_max != i)
-        j = P[i]
-        P[i] = P[i_max]
-        P[i_max] = j
-
-        # O(n) * n
-        for j in 1:upper
-            tmp = A[i, j]
-            A[i, j] = A[i_max, j]
-            A[i_max, j] = tmp
-        end
-
-        P[n+1] += 1
-    end
+    return A_Map, n, l
 end
 
-function helper1M(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64, i, P)
-    maxA = 0.0
-    i_max = i
-    upper = min(n, i + l + 1)
+function loadb(inputFileb)
+    g = open(inputFileb, "r")
+    mstr = readline(g)
+    m = parse(Int64, mstr)
+    b = ones(Float64, m)
 
-    for k in i:n
-        absA = abs(get(A, k + (i - 1) * n, 0.0))
-        if (absA > maxA)
-            maxA = absA
-            i_max = k
-        end
+    for i in 1:m
+        line = readline(g)
+        v = parse(Float64, line)
+        b[i] = v
     end
-    if (maxA < eps(Float64))
-        println("matrix is degenerate")
-        return -1
-    end
-
-    if (i_max != i)
-        j = P[i]
-        P[i] = P[i_max]
-        P[i_max] = j
-
-        # O(n) * n
-        for j in 1:n
-            tmp = get(A, i + (j - 1) * n, 0.0)
-            A[i + (j - 1) * n] = get(A, (i_max + (j - 1) * n), 0.0)
-            A[i_max + (j - 1) * n] = tmp
-        end
-
-        P[n+1] += 1
-    end
+    return b
 end
+#=
+testRange = [16, 10000, 50000, 100000]
 
-function helper2(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64, i)
-    # O(c) * n
-    upper = min(n, i + l + 1)
+for i in eachindex(testRange)
+    n = testRange[i]
+    path = "Dane$n" * "_1_1/A.txt"
+    A, n, l = loadA(path)
+    path = "Dane$n" * "_1_1/b.txt"
+    b = loadb(path)
+    c = loadb(path)
+    A_copy = Dict{Int64, Float64}()
+    for (key, value) in A
+        A_copy[key] = value
+    end
 
-    for j in (i+1):n
-        A[j, i] = A[j, i] / A[i, i]
+    luNoPivoting(A, b, n, l)
+    x = luSolve(A, b, n, l)
 
-        for k in (i+1):n
-            A[j, k] = A[j, k] - A[j, i] * A[i, k]
+    errors = Float64(0.0)
+
+    for i in eachindex(x)
+        errors += abs(1.0 - x[i])
+    end
+    print("$errors & ")
+    errors /= n
+    print("$errors & ")
+
+    luPartialPivoting(A_copy, c, n, l)
+    x = luSolve(A_copy, c, n, l)
+
+    errors = Float64(0.0)
+
+    for i in eachindex(x)
+        errors += abs(1.0 - x[i])
+    end
+    print("$errors & ")
+    errors /= n
+    print("$errors")
+
+    println(" ")
+end=#
+#=
+
+for i in 5000:5000:100000
+    path = "A$i.txt"
+    A, n, l = loadA(path)
+    path = "b$i.txt"
+    c = loadb(path)
+    b = loadb(path)
+    A_copy = Dict{Int64, Float64}()
+    for (key, value) in A
+        A_copy[key] = value
+    end
+
+    #=t1 = @elapsed luNoPivoting(A, b, n, l)
+    t3 = @elapsed luSolve(A, b, n, l)
+    t1 += t3
+    t2 = @elapsed luPartialPivoting(A_copy, c, n, l)
+    t4 = @elapsed luSolve(A_copy, c, n, l)
+    t2 += t4
+    println("$t1; $t2")=#
+end=#
+
+for i in 5000:5000:100000
+    path = "A$i.txt"
+    A, n, l = loadA(path)
+    path = "b$i.txt"
+    b = loadb(path)
+    A_copy = spzeros(Float64, n, n)
+    for (key, value) in A
+        if key != i * i
+            A_copy[((key - 1) % n) + 1, floor(Int64, key / n) + 1] = value
+        else
+            A_copy[i, i] = value
         end
     end
-
-end
-
-
-
-function helper2M(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64, i)
-    upper = min(n, i + l + 1)
-
-    for j in (i+1):n
-        A[j + (i - 1) * n] = get(A, j + (i - 1) * n, 0.0) / get(A, i + (i - 1) * n, 0.0)
-
-        for k in (i+1):n
-            A[j + (k - 1) * n] = get(A, j + (k - 1) * n, 0.0) - get(A, j + (i - 1) * n, 0.0) * get(A, i + (k - 1) * n, 0.0)
-        end
-    end
-end
-
-function luDecompositionM(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64)
-    ops = 0
-    P = zeros(Int64, n + 1)
-    t1 = 0
-    t2 = 0
-    for i in 1:(n+1)
-        P[i] = i
-    end
-    for i in 1:n
-        t1 += @elapsed helper1M(A, b, n, l, i, P)
-        t2 += @elapsed helper2M(A, b, n, l, i)
-    end
-
-    luSolveM(A, b, n, l, P)
-    #=for i in 1:n
-        for j in 1:n
-            print(A[i, j])
-            print(" ")
-        end
-        println(" ")
+    L,U,p = lu(A_copy)
+    #U\(L\b[p])
+    #=t1 = @elapsed for j in 1:1
+        L,U,p = lu(A_copy)
+        U\(L\b[p])
     end=#
-    println("main part done")
-    #println(ops)
-    println(t1)
-    println(t2)
 
+    #t1 = @elapsed A_copy \ b
+    #println("$t1")
 
-
-    #luSolve(A, b, n, l)
+    #=t1 = @elapsed luNoPivoting(A, b, n, l)
+    t3 = @elapsed luSolve(A, b, n, l)
+    t1 += t3
+    t2 = @elapsed luPartialPivoting(A_copy, c, n, l)
+    t4 = @elapsed luSolve(A_copy, c, n, l)
+    t2 += t4
+    println("$t1; $t2")=#
 end
-
-function luDecomposition(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    ops = 0
-    P = zeros(Int64, n + 1)
-    t1 = 0
-    t2 = 0
-    for i in 1:(n+1)
-        P[i] = i
-    end
-    for i in 1:n
-        t1 += @elapsed helper1(A, b, n, l, i, P)
-        t2 += @elapsed helper2(A, b, n, l, i)
-    end
-    #=for i in 1:n
-        for j in 1:n
-            print(A[i, j])
-            print(" ")
-        end
-        println(" ")
-    end=#
-    println("main part done")
-    #println(ops)
-    println(t1)
-    println(t2)
-
-
-
-    #luSolve(A, b, n, l)
-end
-
-function luSolveM(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64, P)
-    x = zeros(Float64, n)
-    for i in 1:n
-        x[i] = b[P[i]]
-
-        for k in 1:i
-            x[i] -= get(A, i + (k - 1) * n, 0.0) * x[k]
-        end
-    end
-    for i in n:-1:1
-        for k in i+1:n
-            x[i] -= get(A, i + (k - 1) * n, 0.0) * x[k]
-        end
-
-        x[i] /= get(A, i + (i - 1) * n, 0.0)
-    end
-    #=v = n / l
-    y = zeros(Float64, n)
-    ops = 0
-    for i in 1:n
-        sum = 0;
-        lower = max(1, floor(Int64, (i - 1) / l) * l - 1)
-        #println(lower)
-        for k in lower:(i-1)
-            sum = sum + get(A, i + (k - 1) * n, 0.0) * y[k]
-            ops += 1
-        end
-        y[i] = b[i] - sum
-        ops += 1
-    end
-
-    x = zeros(Float64, n)
-    for i in n:-1:1
-        sum = 0;
-        ops += 1
-
-        upper = min(n, i + l + 1)
-        for k in (i+1):upper
-            sum = sum + get(A, i + (k - 1) * n, 0.0) * x[k]
-            ops += 1
-        end
-        x[i] = (1 / get(A, i + (i - 1) * n, 0.0)) * (y[i] - sum)
-        ops += 1
-    end=#
-    println("second part done")
-    #println(ops)
-    println(x)
-end
-
-function luSolve(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    v = n / l
-    y = zeros(Float64, n)
-    ops = 0
-    for i in 1:n
-        sum = 0;
-        lower = max(1, floor(Int64, (i - 1) / l) * l - 1)
-        #println(lower)
-        for k in lower:(i-1)
-            sum = sum + A[i, k] * y[k]
-            ops += 1
-        end
-        y[i] = b[i] - sum
-        ops += 1
-    end
-
-    x = zeros(Float64, n)
-    for i in n:-1:1
-        sum = 0;
-        ops += 1
-
-        upper = min(n, i + l + 1)
-        for k in (i+1):upper
-            sum = sum + A[i, k] * x[k]
-            ops += 1
-        end
-        x[i] = (1 / A[i, i]) * (y[i] - sum)
-        ops += 1
-    end
-    println("second part done")
-    #println(ops)
-    #println(x)
-end
-
-function luTestM(A::Dict{Int64, Float64}, b::Vector{Float64}, n::Int64, l::Int64)
-    @time luDecompositionM(A, b, n, l)
-    #@time luSolveM(A, b, n, l)
-end
-
-function luTest(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    @time luDecomposition(A, b, n, l)
-    @time luSolve(A, b, n, l)
-end
-
-
-f = open("Dane10000_1_1/A.txt", "r")
-
-args = readline(f)
-nl = parse.(Int64, split(args))
-n = nl[1]
-l = nl[2]
-A = spzeros(Float64, n, n)
-args = readlines(f)
-A_Map = Dict{Int64, Float64}()
-
-for arg in args
-    entry = parse.(Float64, split(arg))
-    x = floor(Int32, entry[1])
-    y = floor(Int32, entry[2])
-    v = entry[3]
-    A[x,y] = v
-    A_Map[x + (y-1) * n] = v
-end
-
-g = open("Dane10000_1_1/b.txt", "r")
-m = readline(g)
-
-b = ones(Float64, n)
-
-for i in 1:n
-    line = readline(g)
-    v = parse(Float64, line)
-    b[i] = v
-    #A[i,n+1] = b[i]
-end
-
-C = spzeros(Float64, n, n)
-for i in 1:n
-    for j in 1:n
-        if (A[i, j] != 0)
-            C[i,j] = A[i,j]
-        end
-    end
-end
-#luTestM(A_Map, b, n, l)
-#luTest(A, b, n, l)
-
-println("Hello")
-#luNoPivoting(A_Map, b, n, l)
-luPartialPivoting(A_Map, b, n, l)
-
-#@time lu(A)
